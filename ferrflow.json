@@ -1,0 +1,15 @@
+{
+  "$schema": "https://ferrflow.com/schema/ferrflow.json",
+  "workspace": {
+    "tagTemplate": "v{version}",
+    "floatingTags": ["major"]
+  },
+  "package": [
+    {
+      "name": "refresh-action",
+      "path": ".",
+      "changelog": "CHANGELOG.md",
+      "versionedFiles": []
+    }
+  ]
+}
