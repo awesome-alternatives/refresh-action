@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+      - run: |
+          yq '.runs.steps[].run' action.yml > "$RUNNER_TEMP/action.sh"
+          shellcheck --shell=bash "$RUNNER_TEMP/action.sh"
+
+  without-oidc:
+    name: Without id-token
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./
+        with:
+          api-url: http://127.0.0.1:1
+
+  against-stub:
+    name: API answers ${{ matrix.name }}
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 202
+            status: 202
+            body: '{"slugs":["example"],"dispatched":true}'
+          - name: 202 with an unexpected body
+            status: 202
+            body: '<html>bad gateway</html>'
+          - name: 500
+            status: 500
+            body: 'internal error'
+          - name: nothing in time
+            status: 0
+            body: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - env:
+          STATUS: ${{ matrix.status }}
+          BODY: ${{ matrix.body }}
+        run: |
+          python3 .github/ci/stub-api.py 8080 "$STATUS" "$BODY" "$RUNNER_TEMP/requests" &
+          timeout 10 bash -c 'until (exec 3<>/dev/tcp/127.0.0.1/8080) 2>/dev/null; do sleep 0.2; done'
+      - uses: ./
+        with:
+          api-url: http://127.0.0.1:8080
+      - run: grep -q '^POST /v1/refresh Bearer ey' "$RUNNER_TEMP/requests"
